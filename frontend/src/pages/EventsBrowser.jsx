@@ -27,6 +27,19 @@ export default function EventsBrowser() {
       .finally(() => setLoading(false))
   }
 
+  // Seed registered map from existing registrations on mount
+  useEffect(() => {
+    client.get('/registrations/my')
+      .then(r => {
+        const map = {}
+        r.data.forEach(reg => {
+          if (reg.status !== 'Cancelled') map[reg.event_id] = true
+        })
+        setRegistered(map)
+      })
+      .catch(() => {})
+  }, [])
+
   useEffect(() => {
     fetchEvents(search, category)
   }, [category])

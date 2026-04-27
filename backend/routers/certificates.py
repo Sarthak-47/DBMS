@@ -1,5 +1,4 @@
 import os
-from datetime import datetime
 from fastapi import APIRouter, Depends, HTTPException
 from fastapi.responses import FileResponse
 from db import get_cursor
@@ -83,11 +82,15 @@ def _generate_pdf(path: str, full_name: str, reg_no: str,
 def my_certs(user: dict = Depends(get_current_user)):
     uid = int(user["sub"])
     with get_cursor() as cur:
+        # cert_id stored against student_id; join through STUDENT to filter by user_id
         cur.execute(
             """SELECT c.cert_id, c.cert_type, c.issued_at,
                       e.title AS event_title, e.start_datetime
-               FROM certificates c JOIN events e ON c.event_id = e.event_id
-               WHERE c.user_id = %s ORDER BY c.issued_at DESC""",
+               FROM CERTIFICATES c
+               JOIN EVENT e      ON c.event_id = e.event_id
+               JOIN STUDENT s    ON c.student_id = s.student_id
+               WHERE s.user_id = %s
+               ORDER BY c.issued_at DESC""",
             (uid,),
         )
         cols = [d[0] for d in cur.description]
@@ -98,31 +101,43 @@ def my_certs(user: dict = Depends(get_current_user)):
 def generate_cert(event_id: int, user: dict = Depends(get_current_user)):
     uid = int(user["sub"])
     with get_cursor() as cur:
+        # Get student_id for this user
+        cur.execute("SELECT student_id FROM STUDENT WHERE user_id = %s", (uid,))
+        srow = cur.fetchone()
+        if not srow:
+            raise HTTPException(400, "No student profile for this user")
+        student_id = srow[0]
+
         # Check confirmed registration
         cur.execute(
-            "SELECT reg_id FROM registrations WHERE user_id=%s AND event_id=%s AND status='registered'",
-            (uid, event_id),
+            """SELECT registration_id FROM REGISTRATION
+               WHERE student_id = %s AND event_id = %s
+                 AND registration_status = 'Registered'""",
+            (student_id, event_id),
         )
         if not cur.fetchone():
             raise HTTPException(400, "No confirmed registration for this event")
 
         # Check duplicate
         cur.execute(
-            "SELECT cert_id FROM certificates WHERE user_id=%s AND event_id=%s",
-            (uid, event_id),
+            "SELECT cert_id FROM CERTIFICATES WHERE student_id = %s AND event_id = %s",
+            (student_id, event_id),
         )
         if cur.fetchone():
             raise HTTPException(400, "Certificate already issued")
 
-        # Fetch event + user details
+        # Fetch event + student details
         cur.execute(
-            """SELECT e.title, e.start_datetime, u.full_name, u.reg_no,
-                      uo.full_name AS organizer_name
-               FROM events e
-               JOIN users u  ON u.user_id = %s
-               LEFT JOIN users uo ON e.organizer_id = uo.user_id
+            """SELECT e.title, e.start_datetime,
+                      s.full_name,
+                      srm.reg_no,
+                      cd.organizer_name
+               FROM EVENT e
+               JOIN STUDENT s           ON s.student_id = %s
+               LEFT JOIN SRM_STUDENT srm ON s.student_id = srm.student_id
+               LEFT JOIN CLUB_OR_DEPARTMENT cd ON e.organizer_id = cd.organizer_id
                WHERE e.event_id = %s""",
-            (uid, event_id),
+            (student_id, event_id),
         )
         row = cur.fetchone()
         if not row:
@@ -138,11 +153,11 @@ def generate_cert(event_id: int, user: dict = Depends(get_current_user)):
                       event_date, org_name or "Evenzo")
 
         cur.execute(
-            """INSERT INTO certificates (user_id, event_id, cert_type, pdf_path)
-               VALUES (%s,%s,%s,%s) RETURNING cert_id""",
-            (uid, event_id, "participation", f"/certs/{filename}"),
+            """INSERT INTO CERTIFICATES (student_id, event_id, cert_type, pdf_path)
+               VALUES (%s, %s, %s, %s)""",
+            (student_id, event_id, "participation", f"/certs/{filename}"),
         )
-        cert_id = cur.fetchone()[0]
+        cert_id = cur.lastrowid
 
     return {"cert_id": cert_id, "pdf_path": f"/certs/{filename}"}
 
@@ -152,12 +167,16 @@ def download_cert(cert_id: int, user: dict = Depends(get_current_user)):
     uid = int(user["sub"])
     with get_cursor() as cur:
         cur.execute(
-            "SELECT pdf_path, user_id FROM certificates WHERE cert_id=%s", (cert_id,)
+            """SELECT c.pdf_path, s.user_id
+               FROM CERTIFICATES c
+               JOIN STUDENT s ON c.student_id = s.student_id
+               WHERE c.cert_id = %s""",
+            (cert_id,),
         )
         row = cur.fetchone()
     if not row:
         raise HTTPException(404, "Certificate not found")
-    if row[1] != uid and user["role"] != "admin":
+    if row[1] != uid and user.get("role") != "admin":
         raise HTTPException(403, "Not your certificate")
 
     pdf_path = row[0].lstrip("/")

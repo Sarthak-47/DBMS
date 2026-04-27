@@ -3,338 +3,468 @@ import { Link, useLocation } from 'react-router-dom'
 import { useAuthStore } from '../store/authStore'
 
 /* ─────────────────────────────────────────────────────────────
- * Evenzo AI Assistant — role-aware help chatbot
- * No backend dependency; rule-based intent matching.
+ * Evie — role-aware assistant
+ * Each role gets its own command set + detailed step-by-step answers.
  * ───────────────────────────────────────────────────────────── */
 
-/** Role key normalization — maps DB roles to our KB buckets. */
 function roleKey(role) {
   if (role === 'admin') return 'admin'
   if (role === 'organizer' || role === 'organiser' || role === 'faculty') return 'organizer'
-  return 'student' // student + other_student
+  return 'student'
 }
 
 const ROLE_LABEL = {
-  student: 'Student',
+  student:  'Student',
   organizer: 'Organizer / Faculty',
-  admin: 'Admin',
+  admin:    'Admin',
 }
 
-/** Help commands shown as quick chips in the launcher. */
+/* ── Command chips per role ─────────────────────────────────── */
 const COMMANDS = {
   student: [
-    { cmd: '/events',        label: 'Browse events' },
-    { cmd: '/register',      label: 'How do I register?' },
-    { cmd: '/teams',         label: 'Team registration' },
-    { cmd: '/payment',       label: 'Payment help' },
-    { cmd: '/my-regs',       label: 'View my registrations' },
-    { cmd: '/cancel',        label: 'Cancel registration' },
-    { cmd: '/clash',         label: 'Time-clash rule' },
+    { cmd: '/register',  label: 'How do I register?' },
+    { cmd: '/payment',   label: 'Paying for an event' },
+    { cmd: '/teams',     label: 'Team registration' },
+    { cmd: '/cancel',    label: 'Cancel registration' },
+    { cmd: '/clash',     label: 'Time-clash error?' },
+    { cmd: '/my-regs',   label: 'View my registrations' },
+    { cmd: '/events',    label: 'Find events' },
+    { cmd: '/cert',      label: 'Get my certificate' },
   ],
   organizer: [
-    { cmd: '/create',        label: 'Create an event' },
-    { cmd: '/approval',      label: 'Approval workflow' },
-    { cmd: '/venue',         label: 'Pick a venue' },
-    { cmd: '/capacity',      label: 'Capacity rules' },
-    { cmd: '/fees',          label: 'Registration fees & UPI' },
-    { cmd: '/registrations', label: 'View registrations' },
-    { cmd: '/lifecycle',     label: 'Event lifecycle' },
+    { cmd: '/create',       label: 'Create a new event' },
+    { cmd: '/approval',     label: 'Event approval process' },
+    { cmd: '/venue',        label: 'Choosing a venue' },
+    { cmd: '/fees',         label: 'Set registration fee' },
+    { cmd: '/team-size',    label: 'Team size settings' },
+    { cmd: '/registrants',  label: 'View who registered' },
+    { cmd: '/edit-event',   label: 'Edit or delete event' },
+    { cmd: '/clash-venue',  label: 'Venue clash error?' },
   ],
   admin: [
-    { cmd: '/pending',       label: 'Approve pending events' },
-    { cmd: '/reject',        label: 'Reject / auto-reject' },
-    { cmd: '/venues',        label: 'Manage venues' },
-    { cmd: '/users',         label: 'User & role control' },
-    { cmd: '/reports',       label: 'Revenue & reports' },
-    { cmd: '/clashes',       label: 'Venue clash policy' },
-    { cmd: '/archive',       label: 'Archive completed events' },
+    { cmd: '/approve',      label: 'Approve an event' },
+    { cmd: '/reject',       label: 'Reject an event' },
+    { cmd: '/add-venue',    label: 'Add a new venue' },
+    { cmd: '/all-events',   label: 'View all events' },
+    { cmd: '/all-regs',     label: 'View all registrations' },
+    { cmd: '/roles',        label: 'How user roles work' },
+    { cmd: '/clash-policy', label: 'Clash detection policy' },
   ],
 }
 
-/** Knowledge base — role × keyword → answer (JSX allowed). */
+/* ── Knowledge base ─────────────────────────────────────────── */
 const KB = {
+
+  /* ── STUDENT ── */
   student: [
     {
-      keys: ['event', 'browse', 'explore', 'list', '/events'],
+      keys: ['/events', 'find event', 'browse', 'explore', 'discover', 'list events'],
       a: (
         <>
-          Head to <Link to="/events" className="text-gold underline">Explore Events</Link>. You'll see all
-          <b> approved</b> and <b>upcoming</b> events with venue, fee, team size, and deadline.
+          <p className="mb-1 font-medium">Finding events 🔍</p>
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>Click <Link to="/events" className="text-gold underline">Explore Events</Link> in the sidebar.</li>
+            <li>Use the <b>search bar</b> to find events by name.</li>
+            <li>Filter by category — Hackathon, Workshop, Cultural, Technical, etc.</li>
+            <li>Each card shows the date, venue, fee, and team size.</li>
+            <li>Click <b>View Details</b> for the full description.</li>
+          </ol>
+          <p className="mt-2 text-white/60 text-xs">Events marked <span className="text-evgreen">✓ Registered</span> are ones you've already joined.</p>
         </>
       ),
     },
     {
-      keys: ['register', 'sign up for event', 'join event', '/register'],
+      keys: ['/register', 'how to register', 'sign up', 'join event', 'register for'],
       a: (
         <>
-          Open the event card → click <b>Register</b>. If it has a team size &gt; 1, you'll be asked for a
-          team name and teammates. You must register <b>before the registration deadline</b>.
+          <p className="mb-1 font-medium">Registering for an event 📋</p>
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>Go to <Link to="/events" className="text-gold underline">Explore Events</Link> and find the event you want.</li>
+            <li>Click <b>Register Now</b> on the event card.</li>
+            <li>If it's a <b>team event</b>, enter your team name when prompted.</li>
+            <li>If there's a <b>fee</b>, a payment modal will appear — complete UPI payment first.</li>
+            <li>Once submitted, your status shows as <b>Registered</b>.</li>
+          </ol>
+          <p className="mt-2 text-white/60 text-xs">⚠ Make sure to register before the deadline shown on the event card.</p>
         </>
       ),
     },
     {
-      keys: ['team', 'teammate', 'squad', '/teams'],
+      keys: ['/payment', 'pay', 'fee', 'upi', 'transaction', 'paid event', 'payment failed'],
       a: (
         <>
-          Team events require a unique team name per event. Add teammates by their SRM email / reg. no.
-          You can view all your teams under <Link to="/teams" className="text-gold underline">My Teams</Link>.
-          Team size must satisfy <code>min_team_size ≤ N ≤ max_team_size</code>.
+          <p className="mb-1 font-medium">Paying for a paid event 💳</p>
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>Click <b>Register Now</b> — a payment modal opens showing the UPI ID and amount.</li>
+            <li>Open your UPI app (PhonePe, GPay, Paytm) and pay to the UPI ID shown.</li>
+            <li>Copy the <b>transaction reference / UTR number</b> from your payment app.</li>
+            <li>Paste it into the <b>Transaction Reference</b> field in the modal.</li>
+            <li>Click <b>Confirm Payment</b> — your registration is submitted.</li>
+          </ol>
+          <p className="mt-2 text-white/60 text-xs">⚠ Fees are non-refundable unless the organizer cancels the event.</p>
         </>
       ),
     },
     {
-      keys: ['pay', 'payment', 'fee', 'upi', 'txn', '/payment'],
+      keys: ['/teams', 'team', 'teammate', 'group', 'squad', 'team registration'],
       a: (
         <>
-          Paid events show a UPI ID + QR. Pay, then paste the <b>transaction reference</b> into the
-          registration modal. Your status flips from <i>Pending</i> → <i>Registered</i> once payment is verified.
+          <p className="mb-1 font-medium">Team registration 👥</p>
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>Team events show a <b>min / max team size</b> on the event card.</li>
+            <li>When registering, enter a <b>unique team name</b> for that event.</li>
+            <li>Your teammates also need to register for the same event using the <b>same team name</b>.</li>
+            <li>View your teams anytime at <Link to="/teams" className="text-gold underline">My Teams</Link>.</li>
+          </ol>
+          <p className="mt-2 text-white/60 text-xs">Solo events (min=max=1) don't ask for a team name.</p>
         </>
       ),
     },
     {
-      keys: ['my registration', 'status', 'registered', '/my-regs'],
+      keys: ['/cancel', 'cancel', 'withdraw', 'drop out', 'unregister'],
       a: (
         <>
-          See <Link to="/my-registrations" className="text-gold underline">My Registrations</Link> for every
-          event you've joined, payment status, and team info.
+          <p className="mb-1 font-medium">Cancelling your registration ❌</p>
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>Go to <Link to="/my-registrations" className="text-gold underline">My Registrations</Link>.</li>
+            <li>Find the event you want to leave.</li>
+            <li>Click the <b>Cancel</b> button next to it.</li>
+            <li>Your status changes to <i>Cancelled</i> immediately.</li>
+          </ol>
+          <p className="mt-2 text-white/60 text-xs">⚠ Paid fees are not refunded automatically — contact the organizer.</p>
         </>
       ),
     },
     {
-      keys: ['cancel', 'withdraw', 'leave', '/cancel'],
+      keys: ['/clash', 'clash', 'overlap', 'time conflict', 'already registered', 'conflict'],
       a: (
         <>
-          Open <Link to="/my-registrations" className="text-gold underline">My Registrations</Link> → click
-          <b> Cancel</b> on the event. Paid fees are non-refundable unless the event itself is cancelled by the organizer.
+          <p className="mb-1 font-medium">Time-clash error 🚫</p>
+          <p className="mt-1">Evenzo prevents you from registering for two events that run at the same time.</p>
+          <p className="mt-1">To fix it:</p>
+          <ol className="list-decimal ml-4 space-y-1 mt-1">
+            <li>Go to <Link to="/my-registrations" className="text-gold underline">My Registrations</Link> to see which event is clashing.</li>
+            <li>Cancel the conflicting event if you no longer need it.</li>
+            <li>Then register for the new one.</li>
+          </ol>
         </>
       ),
     },
     {
-      keys: ['clash', 'overlap', 'conflict', '/clash'],
+      keys: ['/my-regs', 'my registration', 'view registration', 'registration status', 'registered events'],
       a: (
         <>
-          Evenzo blocks you from registering for two events whose times overlap. If you hit a clash error,
-          cancel the earlier one first or pick an event in a different time slot.
-        </>
-      ),
-    },
-    {
-      keys: ['profile', 'edit profile', 'password'],
-      a: (
-        <>
-          Update your details under <Link to="/profile" className="text-gold underline">My Profile</Link>.
-          Changing password requires you to know your current one.
-        </>
-      ),
-    },
-  ],
-
-  organizer: [
-    {
-      keys: ['create', 'new event', 'add event', '/create'],
-      a: (
-        <>
-          Go to <Link to="/organizer/create" className="text-gold underline">Create Event</Link>. Fill in title,
-          category, description, venue, start/end, <b>registration deadline</b>, fee, min/max team size, and
-          max participants. Submit — the event enters <i>Pending</i> until an Admin approves it.
-        </>
-      ),
-    },
-    {
-      keys: ['approve', 'approval', 'pending', '/approval'],
-      a: (
-        <>
-          New events start as <code>approval_status = Pending</code>. Only after Admin marks them
-          <b> Approved</b> do they appear to students. You'll see the state on
-          <Link to="/organizer/events" className="text-gold underline"> My Events</Link>.
-        </>
-      ),
-    },
-    {
-      keys: ['venue', 'where', 'room', 'hall', '/venue'],
-      a: (
-        <>
-          Pick from the <b>VENUE</b> list (Auditorium / Lab / Classroom / Ground / Online). The system
-          rejects a venue booking that overlaps in time with an existing event at the same venue.
-        </>
-      ),
-    },
-    {
-      keys: ['capacity', 'max participants', 'limit', '/capacity'],
-      a: (
-        <>
-          <code>max_participants</code> must be ≤ <code>venue.capacity</code>. Once reached, further
-          registrations are auto-blocked by <code>proc_register_student</code>.
-        </>
-      ),
-    },
-    {
-      keys: ['fee', 'upi', 'money', 'revenue', 'payment', '/fees'],
-      a: (
-        <>
-          Set <code>reg_fee</code> to 0 for free events. For paid events, add UPI ID, payee name, and a QR image
-          under EVENT_PAYMENT_DETAILS. Revenue is visible in <code>vw_event_revenue_report</code>.
-        </>
-      ),
-    },
-    {
-      keys: ['registrant', 'who registered', 'participant', '/registrations'],
-      a: (
-        <>
-          Open <Link to="/organizer/events" className="text-gold underline">My Events</Link> → click an event
-          → <b>Registrations</b>. You'll see confirmed + pending entries and teams.
-        </>
-      ),
-    },
-    {
-      keys: ['lifecycle', 'status', 'ongoing', 'completed', 'archive', '/lifecycle'],
-      a: (
-        <>
-          Events move Upcoming → Ongoing → Completed → Archived. When you mark an event Completed past its
-          deadline, the <code>trg_cancel_unpaid_on_event_complete</code> trigger auto-cancels unpaid registrations.
-        </>
-      ),
-    },
-    {
-      keys: ['passcode', 'organizer passcode'],
-      a: <>Organizer/faculty accounts can only be created with a passcode provided by Admin during registration.</>,
-    },
-  ],
-
-  admin: [
-    {
-      keys: ['pending', 'approve', 'approval', '/pending'],
-      a: (
-        <>
-          Review submissions at <Link to="/admin/pending" className="text-gold underline">Pending Events</Link>.
-          Approving sets <code>approval_status = Approved</code>, <code>approved_by_admin_id</code>, and
-          <code> approved_at</code>.
-        </>
-      ),
-    },
-    {
-      keys: ['reject', 'auto reject', 'stale', '/reject'],
-      a: (
-        <>
-          Reject individually from the pending list, or run
-          <code> CALL auto_reject_stale_events(N)</code> to bulk-reject anything pending for more than N days.
-        </>
-      ),
-    },
-    {
-      keys: ['venue', 'add venue', 'capacity', '/venues'],
-      a: (
-        <>
-          Manage venues at <Link to="/admin/venues" className="text-gold underline">Venues</Link>. Capacity is
-          enforced against every event's <code>max_participants</code>.
-        </>
-      ),
-    },
-    {
-      keys: ['user', 'role', 'organizer', 'faculty', '/users'],
-      a: (
-        <>
-          Admins cannot self-register — they must be inserted directly into the <code>users</code> table.
-          Organizer/faculty signups require the organizer passcode. Students and other-college students can
-          self-register freely.
-        </>
-      ),
-    },
-    {
-      keys: ['report', 'revenue', 'analytics', 'summary', '/reports'],
-      a: (
-        <>
-          Use the built-in views:
-          <ul className="list-disc ml-5 mt-1 space-y-0.5">
-            <li><code>vw_upcoming_approved_events</code></li>
-            <li><code>vw_student_registration_summary</code></li>
-            <li><code>vw_event_revenue_report</code></li>
+          <p className="mb-1 font-medium">Your registrations 📄</p>
+          <p>Head to <Link to="/my-registrations" className="text-gold underline">My Registrations</Link> to see:</p>
+          <ul className="list-disc ml-4 space-y-1 mt-1">
+            <li>All events you've registered for</li>
+            <li>Registration status — <b>Registered</b>, <b>Pending</b>, or <b>Cancelled</b></li>
+            <li>Payment reference and payment status</li>
+            <li>Team name (for team events)</li>
           </ul>
         </>
       ),
     },
     {
-      keys: ['clash', 'venue clash', 'conflict', '/clashes'],
+      keys: ['/cert', 'certificate', 'participation cert', 'download cert'],
       a: (
         <>
-          Overlap detection uses <code>A.start &lt; B.end AND A.end &gt; B.start</code> on both
-          (user-time-clash) and (venue-clash). Enforced inside <code>proc_register_no_time_clash</code> and
-          <code> proc_create_event_no_venue_clash</code>.
+          <p className="mb-1 font-medium">Getting your certificate 🏆</p>
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>You must have a <b>Registered</b> status for the event (not Pending or Cancelled).</li>
+            <li>After the event ends, go to <b>Certificates</b> in the sidebar.</li>
+            <li>Click <b>Generate</b> next to the event — your PDF is created.</li>
+            <li>Click <b>Download</b> to save it.</li>
+          </ol>
+          <p className="mt-2 text-white/60 text-xs">Each certificate is a unique PDF with your name, reg. no., and event details.</p>
+        </>
+      ),
+    },
+  ],
+
+  /* ── ORGANIZER ── */
+  organizer: [
+    {
+      keys: ['/create', 'create event', 'new event', 'add event', 'how to create', 'make event'],
+      a: (
+        <>
+          <p className="mb-1 font-medium">Creating a new event ✏️</p>
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>Go to <Link to="/organizer/create" className="text-gold underline">Create Event</Link> in the sidebar.</li>
+            <li>Fill in: <b>Title</b>, <b>Category</b>, <b>Description</b>, <b>Eligibility</b>.</li>
+            <li>Set <b>Venue</b>, <b>Start &amp; End date/time</b>, and <b>Registration Deadline</b>.</li>
+            <li>Enter <b>Fee</b> (0 for free), <b>UPI ID</b> if paid, and <b>Min/Max Team Size</b>.</li>
+            <li>Set <b>Max Participants</b> (cannot exceed venue capacity).</li>
+            <li>Click <b>Submit</b> — the event enters <b>Pending</b> status.</li>
+          </ol>
+          <p className="mt-2 text-white/60 text-xs">An Admin must approve it before students can see or register for it.</p>
         </>
       ),
     },
     {
-      keys: ['archive', 'close', 'deadline', '/archive'],
+      keys: ['/approval', 'approval', 'pending', 'approved', 'how long', 'when approved', 'event status'],
       a: (
         <>
-          Run <code>CALL close_event_registrations()</code> to archive any Upcoming event whose
-          <code> reg_last_date</code> has passed.
+          <p className="mb-1 font-medium">Event approval process ✅</p>
+          <ul className="list-disc ml-4 space-y-1">
+            <li>After you submit, your event status is <b>Pending</b>.</li>
+            <li>An Admin reviews it and either <b>Approves</b> or <b>Rejects</b> it.</li>
+            <li>Once <b>Approved</b>, it appears on the Explore Events page for students.</li>
+            <li>If <b>Rejected</b>, you can recreate it with corrections.</li>
+          </ul>
+          <p className="mt-2">Track your events at <Link to="/organizer/events" className="text-gold underline">My Events</Link>.</p>
         </>
       ),
     },
     {
-      keys: ['registration list', 'all registrations'],
+      keys: ['/venue', 'venue', 'choose venue', 'room', 'hall', 'auditorium', 'where'],
       a: (
         <>
-          See every registration across the system at
-          <Link to="/admin/registrations" className="text-gold underline"> Registrations</Link>.
+          <p className="mb-1 font-medium">Choosing a venue 🏛️</p>
+          <ul className="list-disc ml-4 space-y-1">
+            <li>A dropdown in the Create Event form lists all available venues.</li>
+            <li>Each venue shows its <b>name, building, floor, room no., type, and capacity</b>.</li>
+            <li>If another event is already booked at that venue during your time slot, you'll see a <b>venue clash error</b> and must pick a different venue or time.</li>
+            <li>Your <b>Max Participants</b> cannot exceed the venue's capacity.</li>
+          </ul>
+        </>
+      ),
+    },
+    {
+      keys: ['/fees', 'fee', 'upi', 'paid', 'free event', 'payment', 'set fee', 'charge'],
+      a: (
+        <>
+          <p className="mb-1 font-medium">Setting registration fees 💰</p>
+          <ul className="list-disc ml-4 space-y-1">
+            <li>Set <b>Fee</b> to <code>0</code> for a free event — no payment modal appears for students.</li>
+            <li>For paid events, enter the <b>fee amount</b>, your <b>UPI ID</b>, and <b>Payee Name</b>.</li>
+            <li>Students will see a QR / UPI ID and need to enter their transaction reference to complete registration.</li>
+          </ul>
+        </>
+      ),
+    },
+    {
+      keys: ['/team-size', 'team size', 'min team', 'max team', 'solo', 'individual', 'group size'],
+      a: (
+        <>
+          <p className="mb-1 font-medium">Team size settings 👥</p>
+          <ul className="list-disc ml-4 space-y-1">
+            <li>Set <b>Min Team Size = Max Team Size = 1</b> for a solo/individual event.</li>
+            <li>For team events, set e.g. <b>Min = 2, Max = 4</b> to allow teams of 2–4.</li>
+            <li>Students registering will be asked to provide a team name matching their teammates' entry.</li>
+          </ul>
+        </>
+      ),
+    },
+    {
+      keys: ['/registrants', 'who registered', 'participants', 'registrations list', 'view registrants'],
+      a: (
+        <>
+          <p className="mb-1 font-medium">Viewing registrations 📋</p>
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>Go to <Link to="/organizer/events" className="text-gold underline">My Events</Link>.</li>
+            <li>Click on an event to see its detail page.</li>
+            <li>The <b>Registrations</b> tab shows every participant — name, reg. no., team, status, and payment reference.</li>
+          </ol>
+        </>
+      ),
+    },
+    {
+      keys: ['/edit-event', 'edit event', 'delete event', 'update event', 'change event', 'remove event'],
+      a: (
+        <>
+          <p className="mb-1 font-medium">Editing or deleting an event 🗑️</p>
+          <ul className="list-disc ml-4 space-y-1">
+            <li>Only <b>Pending</b> events can be deleted (before Admin approval).</li>
+            <li>Go to <Link to="/organizer/events" className="text-gold underline">My Events</Link> → find the event → click <b>Delete</b>.</li>
+            <li>Approved events cannot be deleted directly — contact Admin.</li>
+          </ul>
+        </>
+      ),
+    },
+    {
+      keys: ['/clash-venue', 'venue clash', 'clash error', 'venue conflict', 'booked', 'time slot taken'],
+      a: (
+        <>
+          <p className="mb-1 font-medium">Venue clash error 🚫</p>
+          <p className="mt-1">This means another event is already booked at the same venue during the same time slot.</p>
+          <p className="mt-1">To resolve:</p>
+          <ol className="list-decimal ml-4 space-y-1 mt-1">
+            <li>Pick a <b>different venue</b> from the dropdown, or</li>
+            <li>Change the <b>start / end time</b> so it doesn't overlap.</li>
+          </ol>
+        </>
+      ),
+    },
+  ],
+
+  /* ── ADMIN ── */
+  admin: [
+    {
+      keys: ['/approve', 'approve event', 'how to approve', 'approving'],
+      a: (
+        <>
+          <p className="mb-1 font-medium">Approving an event ✅</p>
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>Go to <Link to="/admin/pending" className="text-gold underline">Pending Events</Link> in the sidebar.</li>
+            <li>Review the event — title, organizer, venue, description, dates.</li>
+            <li>Click <b>Approve</b> to make it live. Students can now see and register for it.</li>
+          </ol>
+          <p className="mt-2 text-white/60 text-xs">Your name and timestamp are recorded when you approve.</p>
+        </>
+      ),
+    },
+    {
+      keys: ['/reject', 'reject event', 'how to reject', 'rejecting', 'decline event'],
+      a: (
+        <>
+          <p className="mb-1 font-medium">Rejecting an event ❌</p>
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>Go to <Link to="/admin/pending" className="text-gold underline">Pending Events</Link>.</li>
+            <li>Find the event that violates policy or needs revision.</li>
+            <li>Click <b>Reject</b> — the event status is set to <i>Rejected</i>.</li>
+            <li>The organizer can see this on their <b>My Events</b> page and resubmit with corrections.</li>
+          </ol>
+        </>
+      ),
+    },
+    {
+      keys: ['/add-venue', 'add venue', 'create venue', 'new venue', 'register venue'],
+      a: (
+        <>
+          <p className="mb-1 font-medium">Adding a new venue 🏛️</p>
+          <ol className="list-decimal ml-4 space-y-1">
+            <li>Go to <Link to="/admin/venues" className="text-gold underline">Manage Venues</Link>.</li>
+            <li>Click <b>Add Venue</b>.</li>
+            <li>Fill in: <b>Venue Name</b>, <b>Building</b>, <b>Floor</b>, <b>Room No.</b>, <b>Type</b> (Auditorium / Lab / Classroom / Ground / Online), and <b>Capacity</b>.</li>
+            <li>Submit — the venue is immediately available for organizers to select.</li>
+          </ol>
+        </>
+      ),
+    },
+    {
+      keys: ['/all-events', 'all events', 'view all events', 'events list', 'manage events'],
+      a: (
+        <>
+          <p className="mb-1 font-medium">Viewing all events 📋</p>
+          <p>Go to <Link to="/admin/events" className="text-gold underline">All Events</Link> to see every event across the platform — including Pending, Approved, and Rejected ones.</p>
+          <ul className="list-disc ml-4 space-y-1 mt-1">
+            <li>Use the <b>search bar</b> to filter by title or organizer.</li>
+            <li>Each row shows status, category, venue, date, and organizer.</li>
+          </ul>
+        </>
+      ),
+    },
+    {
+      keys: ['/all-regs', 'all registrations', 'view registrations', 'registrations list', 'who registered'],
+      a: (
+        <>
+          <p className="mb-1 font-medium">Viewing all registrations 📄</p>
+          <p>Go to <Link to="/admin/registrations" className="text-gold underline">Registrations</Link> to see every registration across all events:</p>
+          <ul className="list-disc ml-4 space-y-1 mt-1">
+            <li>Student name and reg. no.</li>
+            <li>Event title and team name</li>
+            <li>Registration status (Registered / Pending / Cancelled)</li>
+            <li>Payment transaction reference</li>
+          </ul>
+        </>
+      ),
+    },
+    {
+      keys: ['/roles', 'roles', 'user roles', 'how roles work', 'student vs organizer', 'who can do what'],
+      a: (
+        <>
+          <p className="mb-1 font-medium">User roles on Evenzo 👤</p>
+          <ul className="list-disc ml-4 space-y-1">
+            <li><b>Student (SRM)</b> — can browse &amp; register for events, join teams, download certificates.</li>
+            <li><b>Student (Other college)</b> — same as SRM student but without reg. no.</li>
+            <li><b>Organizer / Faculty</b> — can create and manage events; requires the organizer passcode to sign up.</li>
+            <li><b>Admin</b> — approves/rejects events, manages venues, views all data. Admin accounts are created directly in the system (not via self-registration).</li>
+          </ul>
+        </>
+      ),
+    },
+    {
+      keys: ['/clash-policy', 'clash policy', 'time clash', 'venue clash', 'overlap policy', 'conflict rule'],
+      a: (
+        <>
+          <p className="mb-1 font-medium">Clash detection policy ⚙️</p>
+          <ul className="list-disc ml-4 space-y-1">
+            <li><b>Venue clash</b> — two events cannot book the same venue in an overlapping time window. Checked when an organizer submits a new event.</li>
+            <li><b>Student time-clash</b> — a student cannot register for two events whose times overlap. Checked at registration time.</li>
+            <li>Both checks use the rule: clash if <code>A.start &lt; B.end AND A.end &gt; B.start</code>.</li>
+          </ul>
         </>
       ),
     },
   ],
 }
 
-/** Common fallback answers independent of role. */
+/* ── Generic fallbacks (any role) ───────────────────────────── */
 const GENERIC = [
   {
-    keys: ['hi', 'hello', 'hey', 'yo'],
-    a: "Hey! Ask me anything about Evenzo — or tap a quick command below.",
+    keys: ['hi', 'hello', 'hey', 'yo', 'sup'],
+    a: "Hey! 👋 I'm Evie. Ask me anything or tap a command below to get started.",
   },
   {
-    keys: ['help', 'commands', '?'],
-    a: 'Use the chips below for quick help, or type a keyword like "payment", "venue", "approval", "clash".',
+    keys: ['help', 'what can you do', 'commands', '?'],
+    a: 'Tap any chip below for step-by-step guidance, or type a keyword like "register", "payment", "venue", "approval", "cancel".',
   },
   {
-    keys: ['logout', 'sign out'],
+    keys: ['logout', 'sign out', 'log out'],
     a: 'Use the Logout button at the bottom of the sidebar.',
   },
   {
-    keys: ['password', 'forgot'],
-    a: 'Password reset isn\'t self-service yet — contact admin.',
+    keys: ['password', 'forgot password', 'reset password'],
+    a: "Password reset isn't self-service yet — contact your admin.",
   },
   {
-    keys: ['thanks', 'thank you', 'ty'],
-    a: "Anytime ✨",
+    keys: ['profile', 'my profile'],
+    a: <><Link to="/profile" className="text-gold underline">My Profile</Link> lets you view and update your account details.</>,
+  },
+  {
+    keys: ['dashboard', 'home'],
+    a: 'Your dashboard shows upcoming events, registrations count, and recent activity at a glance.',
+  },
+  {
+    keys: ['thanks', 'thank you', 'ty', 'awesome', 'great'],
+    a: "Happy to help! ✨",
+  },
+  {
+    keys: ['evie', 'who are you', 'what are you'],
+    a: "I'm Evie, the Evenzo assistant! I can guide you step-by-step through everything on the platform.",
   },
 ]
 
+/* ── Intent matching ────────────────────────────────────────── */
 function findAnswer(text, role) {
   const q = text.trim().toLowerCase()
   if (!q) return null
   const pool = [...(KB[role] || []), ...GENERIC]
-  // exact /command match first
   for (const item of pool) {
-    if (item.keys.some((k) => k.startsWith('/') && k.toLowerCase() === q)) return item.a
+    if (item.keys.some(k => k.startsWith('/') && k.toLowerCase() === q)) return item.a
   }
-  // keyword match
   for (const item of pool) {
-    if (item.keys.some((k) => !k.startsWith('/') && q.includes(k.toLowerCase()))) return item.a
+    if (item.keys.some(k => !k.startsWith('/') && q.includes(k.toLowerCase()))) return item.a
   }
   return null
 }
 
-/* ─────────────────────────────── Component ─────────────────────────────── */
-
+/* ── Component ──────────────────────────────────────────────── */
 export default function EvenzoAssistant() {
   const user = useAuthStore((s) => s.user)
   const role = roleKey(user?.role)
+  const { pathname } = useLocation()
+
   const [open, setOpen]       = useState(false)
   const [input, setInput]     = useState('')
   const [messages, setMessages] = useState(() => ([
-    { from: 'bot', text: `Hi ${user?.full_name?.split(' ')[0] || 'there'} 👋 I'm Evie, your Evenzo assistant. I know help for ${ROLE_LABEL[role]} accounts. Pick a command or ask me something.` },
+    {
+      from: 'bot',
+      text: `Hi ${user?.full_name?.split(' ')[0] || 'there'} 👋 I'm Evie! Tap a command below or ask me anything about Evenzo.`,
+    },
   ]))
   const endRef = useRef(null)
-
   const commands = useMemo(() => COMMANDS[role] || [], [role])
 
   useEffect(() => {
@@ -345,30 +475,34 @@ export default function EvenzoAssistant() {
     const text = (raw ?? input).trim()
     if (!text) return
     const answer = findAnswer(text, role)
-    setMessages((m) => [
+    setMessages(m => [
       ...m,
       { from: 'user', text },
-      { from: 'bot',  text: answer || "I don't have a canned answer for that — try a /command below, or rephrase using keywords like 'payment', 'team', 'approval', 'venue'." },
+      {
+        from: 'bot',
+        text: answer || (
+          <>
+            I don't have a specific answer for that. Try tapping a command below, or rephrase using words like{' '}
+            { role === 'student'   && <><b>"register"</b>, <b>"payment"</b>, <b>"cancel"</b>, or <b>"team"</b>.</> }
+            { role === 'organizer' && <><b>"create"</b>, <b>"venue"</b>, <b>"fees"</b>, or <b>"approval"</b>.</> }
+            { role === 'admin'     && <><b>"approve"</b>, <b>"venue"</b>, <b>"registrations"</b>, or <b>"roles"</b>.</> }
+          </>
+        ),
+      },
     ])
     setInput('')
   }
 
-  function runCommand(cmd) {
-    send(cmd)
-  }
-
-  // Don't render on login/register pages or when not authenticated
-  const { pathname } = useLocation()
   if (!user) return null
-  if (pathname === '/login' || pathname === '/register' || pathname === '/') return null
+  if (pathname === '/' || pathname === '/login' || pathname === '/register') return null
 
   return (
     <>
-      {/* Launcher */}
+      {/* Launcher button */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
-          aria-label="Open Evenzo assistant"
+          aria-label="Open Evie assistant"
           className="fixed bottom-5 right-5 z-40 rounded-full bg-gold text-bg shadow-lg hover:shadow-gold/30 transition-all px-4 py-3 flex items-center gap-2 font-medium"
         >
           <span className="w-2 h-2 rounded-full bg-bg animate-pulse" />
@@ -378,25 +512,26 @@ export default function EvenzoAssistant() {
 
       {/* Chat panel */}
       {open && (
-        <div className="fixed bottom-5 right-5 z-40 w-[360px] max-w-[calc(100vw-2rem)] h-[520px] max-h-[calc(100vh-2rem)]
+        <div className="fixed bottom-5 right-5 z-40 w-[370px] max-w-[calc(100vw-2rem)] h-[540px] max-h-[calc(100vh-2rem)]
                         bg-surface border border-[rgba(200,169,110,0.25)] rounded-2xl shadow-2xl flex flex-col overflow-hidden">
+
           {/* Header */}
           <div className="flex items-center justify-between px-4 py-3 border-b border-[rgba(200,169,110,0.18)] bg-surface2/60">
             <div className="flex items-center gap-2">
               <div className="w-7 h-7 rounded-full bg-gold/20 border border-gold/40 flex items-center justify-center text-gold font-bold text-sm">E</div>
               <div className="leading-tight">
                 <p className="text-white text-sm font-medium">Evie</p>
-                <p className="text-muted text-[11px]">{ROLE_LABEL[role]} help</p>
+                <p className="text-muted text-[11px]">{ROLE_LABEL[role]} guide</p>
               </div>
             </div>
             <button onClick={() => setOpen(false)} className="text-muted hover:text-white text-xl leading-none px-1">×</button>
           </div>
 
           {/* Messages */}
-          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2">
+          <div className="flex-1 overflow-y-auto px-3 py-3 space-y-2.5">
             {messages.map((m, i) => (
               <div key={i} className={`flex ${m.from === 'user' ? 'justify-end' : 'justify-start'}`}>
-                <div className={`max-w-[85%] text-sm px-3 py-2 rounded-xl
+                <div className={`max-w-[88%] text-sm px-3 py-2.5 rounded-xl leading-relaxed
                   ${m.from === 'user'
                     ? 'bg-gold text-bg rounded-br-sm'
                     : 'bg-surface2 text-white/90 border border-[rgba(255,255,255,0.06)] rounded-bl-sm'}`}>
@@ -407,27 +542,34 @@ export default function EvenzoAssistant() {
             <div ref={endRef} />
           </div>
 
-          {/* Commands */}
+          {/* Command chips */}
           <div className="px-3 py-2 border-t border-[rgba(200,169,110,0.12)] flex flex-wrap gap-1.5 bg-bg/40">
-            {commands.map((c) => (
-              <button key={c.cmd} onClick={() => runCommand(c.cmd)}
-                className="text-[11px] text-gold border border-[rgba(200,169,110,0.25)] rounded-full px-2.5 py-1 hover:bg-gold/10 transition-colors">
-                {c.cmd}
+            {commands.map(c => (
+              <button
+                key={c.cmd}
+                onClick={() => send(c.cmd)}
+                className="text-[11px] text-gold border border-[rgba(200,169,110,0.25)] rounded-full px-2.5 py-1 hover:bg-gold/10 transition-colors whitespace-nowrap"
+              >
+                {c.label}
               </button>
             ))}
           </div>
 
           {/* Input */}
           <form
-            onSubmit={(e) => { e.preventDefault(); send() }}
-            className="flex items-center gap-2 px-3 py-2 border-t border-[rgba(200,169,110,0.18)] bg-surface">
+            onSubmit={e => { e.preventDefault(); send() }}
+            className="flex items-center gap-2 px-3 py-2 border-t border-[rgba(200,169,110,0.18)] bg-surface"
+          >
             <input
               value={input}
-              onChange={(e) => setInput(e.target.value)}
-              placeholder="Ask about events, payment, approval…"
-              className="flex-1 bg-surface2 text-white text-sm rounded-lg px-3 py-2 outline-none border border-transparent focus:border-gold/40" />
-            <button type="submit"
-              className="bg-gold text-bg text-sm font-medium rounded-lg px-3 py-2 hover:opacity-90 transition-opacity">
+              onChange={e => setInput(e.target.value)}
+              placeholder="Ask anything…"
+              className="flex-1 bg-surface2 text-white text-sm rounded-lg px-3 py-2 outline-none border border-transparent focus:border-gold/40"
+            />
+            <button
+              type="submit"
+              className="bg-gold text-bg text-sm font-medium rounded-lg px-3 py-2 hover:opacity-90 transition-opacity"
+            >
               Send
             </button>
           </form>

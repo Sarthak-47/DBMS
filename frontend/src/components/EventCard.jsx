@@ -18,17 +18,27 @@ function fmtDate(d) {
 export default function EventCard({ event, onRegister, registering }) {
   const { bg, accent } = CAT_COLORS[event.category] || CAT_COLORS.Other
   const isPaid = parseFloat(event.fee || 0) > 0
+  const isRegistered = !onRegister && !registering
 
   return (
-    <div className="card flex flex-col overflow-hidden hover:border-gold/30 transition-colors">
+    <div className={`card flex flex-col overflow-hidden transition-colors ${
+      isRegistered ? 'border-evgreen/30 hover:border-evgreen/50' : 'hover:border-gold/30'
+    }`}>
       {/* Thumbnail */}
       <div className={`h-28 bg-gradient-to-br ${bg} flex items-end px-4 pb-3 relative`}>
         <span className={`text-xs font-medium ${accent}`}>{event.category}</span>
-        <span className={`absolute top-3 right-3 text-xs px-2 py-0.5 rounded-full font-medium ${
-          isPaid ? 'bg-evamber/20 text-evamber' : 'bg-evgreen/20 text-evgreen'
-        }`}>
-          {isPaid ? `₹${event.fee}` : 'Free'}
-        </span>
+        <div className="absolute top-3 right-3 flex gap-1.5">
+          {isRegistered && (
+            <span className="text-xs px-2 py-0.5 rounded-full font-medium bg-evgreen/20 text-evgreen">
+              ✓ Registered
+            </span>
+          )}
+          <span className={`text-xs px-2 py-0.5 rounded-full font-medium ${
+            isPaid ? 'bg-evamber/20 text-evamber' : 'bg-evgreen/20 text-evgreen'
+          }`}>
+            {isPaid ? `₹${event.fee}` : 'Free'}
+          </span>
+        </div>
       </div>
 
       {/* Body */}
@@ -53,7 +63,11 @@ export default function EventCard({ event, onRegister, registering }) {
             className="flex-1 text-center text-xs border border-[rgba(200,169,110,0.3)] text-gold py-2 rounded-lg hover:bg-gold/10 transition-colors">
             View Details
           </Link>
-          {onRegister && (
+          {isRegistered ? (
+            <div className="flex-1 text-xs py-2 rounded-lg text-center font-medium bg-evgreen/10 text-evgreen border border-evgreen/30 cursor-default">
+              ✓ Registered
+            </div>
+          ) : (
             <button
               onClick={() => onRegister(event)}
               disabled={registering}

@@ -37,19 +37,24 @@ def pending_events(_: dict = Depends(require_role("admin"))):
             """SELECT es.event_id, es.title, es.category, es.organizer_name,
                       es.venue_name, es.description, es.start_datetime, es.created_at
                FROM event_summary es
-               WHERE es.approval_status = 'pending'
-               ORDER BY es.created_at ASC""",
+               WHERE es.approval_status = 'Pending'
+               ORDER BY es.created_at ASC"""
         )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, r)) for r in cur.fetchall()]
 
 
 @router.patch("/events/{event_id}/approve")
-def approve_event(event_id: int, _: dict = Depends(require_role("admin"))):
+def approve_event(event_id: int, user: dict = Depends(require_role("admin"))):
+    uid = int(user["sub"])
     with get_cursor() as cur:
+        # Get admin_id from ADMIN table
+        cur.execute("SELECT admin_id FROM ADMIN WHERE user_id = %s", (uid,))
+        arow = cur.fetchone()
+        admin_id = arow[0] if arow else None
         cur.execute(
-            "UPDATE events SET approval_status='approved' WHERE event_id=%s",
-            (event_id,),
+            "UPDATE EVENT SET approval_status='Approved', approved_by_admin_id=%s, approved_at=NOW() WHERE event_id=%s",
+            (admin_id, event_id),
         )
         if cur.rowcount == 0:
             raise HTTPException(404, "Event not found")
@@ -60,7 +65,7 @@ def approve_event(event_id: int, _: dict = Depends(require_role("admin"))):
 def reject_event(event_id: int, _: dict = Depends(require_role("admin"))):
     with get_cursor() as cur:
         cur.execute(
-            "UPDATE events SET approval_status='rejected' WHERE event_id=%s",
+            "UPDATE EVENT SET approval_status='Rejected' WHERE event_id=%s",
             (event_id,),
         )
         if cur.rowcount == 0:
@@ -72,14 +77,21 @@ def reject_event(event_id: int, _: dict = Depends(require_role("admin"))):
 def all_registrations(_: dict = Depends(require_role("admin"))):
     with get_cursor() as cur:
         cur.execute(
-            """SELECT r.reg_id, u.full_name, u.reg_no,
-                      e.title, t.team_name,
-                      r.status, r.payment_ref, r.registered_at
-               FROM registrations r
-               JOIN users  u ON r.user_id  = u.user_id
-               JOIN events e ON r.event_id = e.event_id
-               LEFT JOIN teams t ON r.team_id = t.team_id
-               ORDER BY r.registered_at DESC LIMIT 200""",
+            """SELECT r.registration_id AS reg_id,
+                      s.full_name,
+                      srm.reg_no,
+                      e.title,
+                      t.team_name,
+                      r.registration_status AS status,
+                      p.transaction_reference AS payment_ref,
+                      r.created_at AS registered_at
+               FROM REGISTRATION r
+               JOIN STUDENT s           ON r.student_id = s.student_id
+               JOIN EVENT e             ON r.event_id = e.event_id
+               LEFT JOIN SRM_STUDENT srm ON s.student_id = srm.student_id
+               LEFT JOIN TEAM t         ON r.team_id = t.team_id
+               LEFT JOIN PAYMENT p      ON r.registration_id = p.registration_id
+               ORDER BY r.created_at DESC LIMIT 200"""
         )
         cols = [d[0] for d in cur.description]
         return [dict(zip(cols, r)) for r in cur.fetchall()]

@@ -30,6 +30,11 @@ certs_dir = os.path.join(os.path.dirname(__file__), "certs")
 os.makedirs(certs_dir, exist_ok=True)
 app.mount("/certs", StaticFiles(directory=certs_dir), name="certs")
 
+# Serve UPI QR images uploaded by organizers
+qr_dir = os.path.join(os.path.dirname(__file__), "qr_images")
+os.makedirs(qr_dir, exist_ok=True)
+app.mount("/qr", StaticFiles(directory=qr_dir), name="qr")
+
 app.include_router(auth_router.router)
 app.include_router(events.router)
 app.include_router(registrations.router)
