@@ -4,7 +4,34 @@ import Sidebar from '../components/layout/Sidebar'
 import client from '../api/client'
 
 const STEPS = ['Basic Info', 'Schedule & Venue', 'Registration & Payment', 'Review & Submit']
-const CATEGORIES = ['Hackathon', 'Workshop', 'Cultural', 'Technical', 'Ideathon', 'Makeathon', 'Other']
+
+const CATEGORIES = [
+  'Hackathon', 'Workshop', 'Cultural', 'Technical',
+  'Ideathon', 'Makeathon', 'Other',
+]
+
+const ELIGIBILITY_OPTIONS = [
+  { value: '',                          label: '— Select eligibility —',        disabled: true },
+  { value: 'Open to All',               label: 'Open to All'                                   },
+  { value: 'SRM Students Only',         label: 'SRM Students Only'                             },
+  { value: 'Non-SRM Students Welcome',  label: 'Non-SRM Students Welcome'                      },
+  { value: '1st Year Only',             label: '1st Year Only'                                 },
+  { value: '2nd Year Only',             label: '2nd Year Only'                                 },
+  { value: '3rd Year Only',             label: '3rd Year Only'                                 },
+  { value: '4th Year Only',             label: '4th Year Only'                                 },
+  { value: '1st & 2nd Year',            label: '1st & 2nd Year'                                },
+  { value: '3rd & 4th Year',            label: '3rd & 4th Year'                                },
+  { value: 'Final Year Only',           label: 'Final Year Only'                               },
+  { value: 'B.Tech Students',           label: 'B.Tech Students'                               },
+  { value: 'M.Tech Students',           label: 'M.Tech Students'                               },
+  { value: 'B.Tech & M.Tech',           label: 'B.Tech & M.Tech'                               },
+  { value: 'PhD Students',              label: 'PhD Students'                                  },
+  { value: 'CSE / IT Students',         label: 'CSE / IT Students'                             },
+  { value: 'ECE / EEE Students',        label: 'ECE / EEE Students'                            },
+  { value: 'Mechanical Students',       label: 'Mechanical Students'                           },
+  { value: 'Civil Students',            label: 'Civil Students'                                },
+  { value: 'All Engineering Branches',  label: 'All Engineering Branches'                      },
+]
 
 const INITIAL = {
   title: '', category: 'Technical', description: '', eligibility: '',
@@ -13,13 +40,30 @@ const INITIAL = {
   upi_id: '', payee_name: '',
 }
 
+/* ── per-step required field descriptors ── */
+const STEP_FIELDS = {
+  0: [
+    { key: 'title',       label: 'Event title'    },
+    { key: 'description', label: 'Description'    },
+    { key: 'eligibility', label: 'Eligibility'    },
+  ],
+  1: [
+    { key: 'start_datetime',        label: 'Start date & time'       },
+    { key: 'end_datetime',          label: 'End date & time'         },
+    { key: 'registration_deadline', label: 'Registration deadline'   },
+    { key: 'venue_id',              label: 'Venue'                   },
+  ],
+}
+
 export default function CreateEvent() {
-  const navigate   = useNavigate()
+  const navigate = useNavigate()
   const [step, setStep]       = useState(0)
   const [form, setForm]       = useState(INITIAL)
   const [venues, setVenues]   = useState([])
   const [loading, setLoading] = useState(false)
   const [err, setErr]         = useState('')
+  const [fieldErrs, setFieldErrs] = useState({})  // field-level red highlights
+
   // QR image
   const [qrFile, setQrFile]       = useState(null)
   const [qrPreview, setQrPreview] = useState(null)
@@ -29,10 +73,89 @@ export default function CreateEvent() {
     client.get('/venues').then(r => setVenues(r.data)).catch(() => {})
   }, [])
 
-  const set = (k, v) => setForm(f => ({ ...f, [k]: v }))
+  const set = (k, v) => {
+    setForm(f => ({ ...f, [k]: v }))
+    // Clear field error when the user fixes it
+    if (fieldErrs[k]) setFieldErrs(fe => { const n = { ...fe }; delete n[k]; return n })
+  }
 
-  function next() { setErr(''); setStep(s => s + 1) }
-  function back() { setErr(''); setStep(s => s - 1) }
+  const isPaid = parseFloat(form.fee) > 0
+
+  /* ── validation ── */
+  function validateStep(s) {
+    const errs = {}
+
+    if (s === 0) {
+      if (!form.title.trim())       errs.title       = 'Event title is required.'
+      if (!form.description.trim()) errs.description = 'Description is required.'
+      if (!form.eligibility)        errs.eligibility = 'Please select an eligibility option.'
+    }
+
+    if (s === 1) {
+      if (!form.start_datetime)        errs.start_datetime        = 'Start date & time is required.'
+      if (!form.end_datetime)          errs.end_datetime          = 'End date & time is required.'
+      if (!form.registration_deadline) errs.registration_deadline = 'Registration deadline is required.'
+      if (!form.venue_id)              errs.venue_id              = 'Please select a venue.'
+
+      if (!errs.start_datetime && !errs.end_datetime) {
+        if (new Date(form.end_datetime) <= new Date(form.start_datetime))
+          errs.end_datetime = 'End time must be after start time.'
+      }
+      if (!errs.registration_deadline && !errs.start_datetime) {
+        if (new Date(form.registration_deadline) > new Date(form.start_datetime))
+          errs.registration_deadline = 'Deadline must be on or before the start time.'
+      }
+    }
+
+    if (s === 2) {
+      const maxP = parseInt(form.max_participants)
+      const minT = parseInt(form.min_team_size)
+      const maxT = parseInt(form.max_team_size)
+      if (!maxP || maxP < 1)  errs.max_participants = 'Max participants must be at least 1.'
+      if (!minT || minT < 1)  errs.min_team_size    = 'Min team size must be at least 1.'
+      if (!maxT || maxT < 1)  errs.max_team_size    = 'Max team size must be at least 1.'
+      if (!errs.min_team_size && !errs.max_team_size && minT > maxT)
+        errs.min_team_size = 'Min team size cannot exceed max team size.'
+
+      if (isPaid) {
+        if (!form.upi_id.trim())    errs.upi_id    = 'UPI ID is required for paid events.'
+        if (!form.payee_name.trim()) errs.payee_name = 'Payee name is required for paid events.'
+      }
+    }
+
+    return errs
+  }
+
+  function next() {
+    const errs = validateStep(step)
+    if (Object.keys(errs).length > 0) {
+      setFieldErrs(errs)
+      // Summary message listing what's missing
+      const labels = STEP_FIELDS[step]
+        ?.filter(f => errs[f.key])
+        .map(f => f.label)
+      const extra = Object.keys(errs).filter(
+        k => !(STEP_FIELDS[step] || []).find(f => f.key === k)
+      )
+      const allMissing = [
+        ...(labels || []),
+        ...extra.map(k => errs[k]),
+      ]
+      setErr(allMissing.length === 1
+        ? allMissing[0]
+        : `Please fill in: ${allMissing.join(', ')}.`)
+      return
+    }
+    setErr('')
+    setFieldErrs({})
+    setStep(s => s + 1)
+  }
+
+  function back() {
+    setErr('')
+    setFieldErrs({})
+    setStep(s => s - 1)
+  }
 
   function onQrChange(e) {
     const file = e.target.files?.[0]
@@ -71,7 +194,6 @@ export default function CreateEvent() {
       const res = await client.post('/events', payload)
       const eventId = res.data.event_id
 
-      // Upload QR image if provided
       if (qrFile && eventId) {
         const fd = new FormData()
         fd.append('file', qrFile)
@@ -86,7 +208,9 @@ export default function CreateEvent() {
     } finally { setLoading(false) }
   }
 
-  const isPaid = parseFloat(form.fee) > 0
+  /* ── field class helper — red border when field has an error ── */
+  const fc = key =>
+    `input${fieldErrs[key] ? ' border-evred/70 focus:border-evred' : ''}`
 
   return (
     <Sidebar>
@@ -127,25 +251,58 @@ export default function CreateEvent() {
           {step === 0 && (
             <div className="space-y-4">
               <div>
-                <label className="label">Event Title <span className="text-evred">*</span></label>
-                <input className="input" placeholder="e.g. HackSRM 6.0"
-                  value={form.title} onChange={e => set('title', e.target.value)} />
+                <label className="label">
+                  Event Title <span className="text-evred">*</span>
+                </label>
+                <input
+                  className={fc('title')}
+                  placeholder="e.g. HackSRM 6.0"
+                  value={form.title}
+                  onChange={e => set('title', e.target.value)}
+                />
+                {fieldErrs.title && <p className="text-evred text-xs mt-1">{fieldErrs.title}</p>}
               </div>
+
               <div>
-                <label className="label">Category</label>
+                <label className="label">Category <span className="text-evred">*</span></label>
                 <select className="input" value={form.category} onChange={e => set('category', e.target.value)}>
                   {CATEGORIES.map(c => <option key={c} value={c}>{c}</option>)}
                 </select>
               </div>
+
               <div>
-                <label className="label">Description</label>
-                <textarea className="input min-h-[90px] resize-none" placeholder="What is this event about?"
-                  value={form.description} onChange={e => set('description', e.target.value)} />
+                <label className="label">
+                  Description <span className="text-evred">*</span>
+                </label>
+                <textarea
+                  className={`${fc('description')} min-h-[90px] resize-none`}
+                  placeholder="What is this event about? Include agenda, prizes, or any key details."
+                  value={form.description}
+                  onChange={e => set('description', e.target.value)}
+                />
+                {fieldErrs.description && <p className="text-evred text-xs mt-1">{fieldErrs.description}</p>}
               </div>
+
               <div>
-                <label className="label">Eligibility</label>
-                <input className="input" placeholder="e.g. All SRM students, 2nd year and above"
-                  value={form.eligibility} onChange={e => set('eligibility', e.target.value)} />
+                <label className="label">
+                  Eligibility <span className="text-evred">*</span>
+                </label>
+                <select
+                  className={fc('eligibility')}
+                  value={form.eligibility}
+                  onChange={e => set('eligibility', e.target.value)}
+                >
+                  {ELIGIBILITY_OPTIONS.map(opt => (
+                    <option
+                      key={opt.value}
+                      value={opt.value}
+                      disabled={opt.disabled}
+                    >
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                {fieldErrs.eligibility && <p className="text-evred text-xs mt-1">{fieldErrs.eligibility}</p>}
               </div>
             </div>
           )}
@@ -155,31 +312,54 @@ export default function CreateEvent() {
             <div className="space-y-4">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="label">Start Date & Time</label>
-                  <input className="input" type="datetime-local"
-                    value={form.start_datetime} onChange={e => set('start_datetime', e.target.value)} />
+                  <label className="label">Start Date & Time <span className="text-evred">*</span></label>
+                  <input
+                    className={fc('start_datetime')}
+                    type="datetime-local"
+                    value={form.start_datetime}
+                    onChange={e => set('start_datetime', e.target.value)}
+                  />
+                  {fieldErrs.start_datetime && <p className="text-evred text-xs mt-1">{fieldErrs.start_datetime}</p>}
                 </div>
                 <div>
-                  <label className="label">End Date & Time</label>
-                  <input className="input" type="datetime-local"
-                    value={form.end_datetime} onChange={e => set('end_datetime', e.target.value)} />
+                  <label className="label">End Date & Time <span className="text-evred">*</span></label>
+                  <input
+                    className={fc('end_datetime')}
+                    type="datetime-local"
+                    value={form.end_datetime}
+                    onChange={e => set('end_datetime', e.target.value)}
+                  />
+                  {fieldErrs.end_datetime && <p className="text-evred text-xs mt-1">{fieldErrs.end_datetime}</p>}
                 </div>
               </div>
+
               <div>
-                <label className="label">Registration Deadline</label>
-                <input className="input" type="datetime-local"
-                  value={form.registration_deadline} onChange={e => set('registration_deadline', e.target.value)} />
+                <label className="label">Registration Deadline <span className="text-evred">*</span></label>
+                <input
+                  className={fc('registration_deadline')}
+                  type="datetime-local"
+                  value={form.registration_deadline}
+                  onChange={e => set('registration_deadline', e.target.value)}
+                />
+                {fieldErrs.registration_deadline && <p className="text-evred text-xs mt-1">{fieldErrs.registration_deadline}</p>}
+                <p className="text-muted text-xs mt-1">Must be on or before the event start time.</p>
               </div>
+
               <div>
-                <label className="label">Venue</label>
-                <select className="input" value={form.venue_id} onChange={e => set('venue_id', e.target.value)}>
+                <label className="label">Venue <span className="text-evred">*</span></label>
+                <select
+                  className={fc('venue_id')}
+                  value={form.venue_id}
+                  onChange={e => set('venue_id', e.target.value)}
+                >
                   <option value="">— Select venue —</option>
                   {venues.map(v => (
                     <option key={v.venue_id} value={v.venue_id}>
-                      {v.name}{v.building_name ? ` · ${v.building_name}` : ''}
+                      {v.name}{v.building_name ? ` · ${v.building_name}` : ''}{v.capacity ? ` (cap. ${v.capacity})` : ''}
                     </option>
                   ))}
                 </select>
+                {fieldErrs.venue_id && <p className="text-evred text-xs mt-1">{fieldErrs.venue_id}</p>}
               </div>
             </div>
           )}
@@ -189,53 +369,84 @@ export default function CreateEvent() {
             <div className="space-y-5">
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="label">Registration Fee (₹)</label>
-                  <input className="input" type="number" min="0" placeholder="0 for free"
-                    value={form.fee} onChange={e => set('fee', e.target.value)} />
-                  <p className="text-xs text-muted mt-1">Set to 0 for a free event</p>
+                  <label className="label">Registration Fee (₹) <span className="text-evred">*</span></label>
+                  <input
+                    className="input"
+                    type="number" min="0"
+                    placeholder="0 for free"
+                    value={form.fee}
+                    onChange={e => set('fee', e.target.value)}
+                  />
+                  <p className="text-xs text-muted mt-1">Set to 0 for a free event.</p>
                 </div>
                 <div>
-                  <label className="label">Max Participants</label>
-                  <input className="input" type="number" min="1"
-                    value={form.max_participants} onChange={e => set('max_participants', e.target.value)} />
+                  <label className="label">Max Participants <span className="text-evred">*</span></label>
+                  <input
+                    className={fc('max_participants')}
+                    type="number" min="1"
+                    value={form.max_participants}
+                    onChange={e => set('max_participants', e.target.value)}
+                  />
+                  {fieldErrs.max_participants && <p className="text-evred text-xs mt-1">{fieldErrs.max_participants}</p>}
                 </div>
               </div>
+
               <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                 <div>
-                  <label className="label">Min Team Size</label>
-                  <input className="input" type="number" min="1"
-                    value={form.min_team_size} onChange={e => set('min_team_size', e.target.value)} />
+                  <label className="label">Min Team Size <span className="text-evred">*</span></label>
+                  <input
+                    className={fc('min_team_size')}
+                    type="number" min="1"
+                    value={form.min_team_size}
+                    onChange={e => set('min_team_size', e.target.value)}
+                  />
+                  {fieldErrs.min_team_size && <p className="text-evred text-xs mt-1">{fieldErrs.min_team_size}</p>}
                 </div>
                 <div>
-                  <label className="label">Max Team Size</label>
-                  <input className="input" type="number" min="1"
-                    value={form.max_team_size} onChange={e => set('max_team_size', e.target.value)} />
+                  <label className="label">Max Team Size <span className="text-evred">*</span></label>
+                  <input
+                    className={fc('max_team_size')}
+                    type="number" min="1"
+                    value={form.max_team_size}
+                    onChange={e => set('max_team_size', e.target.value)}
+                  />
+                  {fieldErrs.max_team_size && <p className="text-evred text-xs mt-1">{fieldErrs.max_team_size}</p>}
                 </div>
               </div>
-              <p className="text-xs text-muted -mt-1">Set Min and Max to 1 for individual participation.</p>
+              <p className="text-xs text-muted -mt-2">Set both to 1 for individual/solo participation.</p>
 
-              {/* Payment details — only shown for paid events */}
+              {/* Payment details — paid events only */}
               {isPaid && (
                 <div className="border-t border-[rgba(255,255,255,0.07)] pt-5 space-y-4">
                   <p className="text-xs text-evamber font-medium uppercase tracking-wide">Payment Details</p>
                   <div className="grid grid-cols-1 sm:grid-cols-2 gap-4">
                     <div>
-                      <label className="label">UPI ID</label>
-                      <input className="input" placeholder="yourclub@upi"
-                        value={form.upi_id} onChange={e => set('upi_id', e.target.value)} />
+                      <label className="label">UPI ID <span className="text-evred">*</span></label>
+                      <input
+                        className={fc('upi_id')}
+                        placeholder="yourclub@upi"
+                        value={form.upi_id}
+                        onChange={e => set('upi_id', e.target.value)}
+                      />
+                      {fieldErrs.upi_id && <p className="text-evred text-xs mt-1">{fieldErrs.upi_id}</p>}
                     </div>
                     <div>
-                      <label className="label">Payee Name</label>
-                      <input className="input" placeholder="Club / Department name"
-                        value={form.payee_name} onChange={e => set('payee_name', e.target.value)} />
+                      <label className="label">Payee Name <span className="text-evred">*</span></label>
+                      <input
+                        className={fc('payee_name')}
+                        placeholder="Club / Department name"
+                        value={form.payee_name}
+                        onChange={e => set('payee_name', e.target.value)}
+                      />
+                      {fieldErrs.payee_name && <p className="text-evred text-xs mt-1">{fieldErrs.payee_name}</p>}
                     </div>
                   </div>
 
                   {/* QR Upload */}
                   <div>
-                    <label className="label">UPI QR Code Image</label>
+                    <label className="label">UPI QR Code Image <span className="text-muted text-xs font-normal">(recommended)</span></label>
                     <p className="text-xs text-muted mb-3">
-                      Students will see this QR in the payment popup. Upload a screenshot of your UPI QR code.
+                      Students see this QR in the payment popup. Upload a screenshot of your UPI QR.
                     </p>
                     {qrPreview ? (
                       <div className="flex items-start gap-4">
@@ -247,11 +458,8 @@ export default function CreateEvent() {
                         <div className="flex flex-col gap-2 pt-1">
                           <p className="text-white text-xs font-medium">{qrFile?.name}</p>
                           <p className="text-muted text-xs">{(qrFile?.size / 1024).toFixed(0)} KB</p>
-                          <button
-                            type="button"
-                            onClick={removeQr}
-                            className="text-xs text-evred hover:text-evred/80 transition-colors text-left"
-                          >
+                          <button type="button" onClick={removeQr}
+                            className="text-xs text-evred hover:text-evred/80 transition-colors text-left">
                             Remove QR
                           </button>
                         </div>
@@ -270,13 +478,7 @@ export default function CreateEvent() {
                         <span className="text-xs">PNG, JPG, WEBP</span>
                       </button>
                     )}
-                    <input
-                      ref={qrInputRef}
-                      type="file"
-                      accept="image/*"
-                      className="hidden"
-                      onChange={onQrChange}
-                    />
+                    <input ref={qrInputRef} type="file" accept="image/*" className="hidden" onChange={onQrChange} />
                   </div>
                 </div>
               )}
@@ -292,41 +494,41 @@ export default function CreateEvent() {
           {/* ── Step 4: Review & Submit ── */}
           {step === 3 && (
             <div className="space-y-4">
-              <div className="space-y-2 text-sm">
+              <div className="space-y-2.5 text-sm">
                 {[
                   ['Title',        form.title],
                   ['Category',     form.category],
-                  ['Description',  form.description   || '—'],
-                  ['Eligibility',  form.eligibility   || 'All students'],
-                  ['Start',        form.start_datetime        ? new Date(form.start_datetime).toLocaleString('en-IN')        : 'TBD'],
-                  ['End',          form.end_datetime          ? new Date(form.end_datetime).toLocaleString('en-IN')          : 'TBD'],
-                  ['Reg Deadline', form.registration_deadline ? new Date(form.registration_deadline).toLocaleString('en-IN') : 'TBD'],
-                  ['Venue',        venues.find(v => String(v.venue_id) === String(form.venue_id))?.name || 'TBD'],
+                  ['Eligibility',  form.eligibility],
+                  ['Description',  form.description],
+                  ['Start',        new Date(form.start_datetime).toLocaleString('en-IN')],
+                  ['End',          new Date(form.end_datetime).toLocaleString('en-IN')],
+                  ['Reg Deadline', new Date(form.registration_deadline).toLocaleString('en-IN')],
+                  ['Venue',        venues.find(v => String(v.venue_id) === String(form.venue_id))?.name || '—'],
                   ['Fee',          isPaid ? `₹${form.fee}` : 'Free'],
-                  ['Capacity',     `${form.max_participants} participants`],
+                  ['Max Capacity', `${form.max_participants} participants`],
                   ['Team Size',    parseInt(form.max_team_size) > 1 ? `${form.min_team_size}–${form.max_team_size} members` : 'Individual'],
                 ].map(([label, val]) => (
-                  <div key={label} className="flex gap-3">
-                    <span className="text-muted w-28 flex-shrink-0">{label}</span>
-                    <span className="text-white">{val}</span>
+                  <div key={label} className="flex gap-3 py-1 border-b border-[rgba(255,255,255,0.04)] last:border-0">
+                    <span className="text-muted w-28 flex-shrink-0 text-xs">{label}</span>
+                    <span className="text-white text-sm">{val}</span>
                   </div>
                 ))}
               </div>
 
               {isPaid && (
-                <div className="border-t border-[rgba(255,255,255,0.07)] pt-4 space-y-2 text-sm">
-                  <p className="text-xs text-evamber font-medium uppercase tracking-wide">Payment</p>
+                <div className="border-t border-[rgba(255,255,255,0.07)] pt-4 space-y-2.5 text-sm">
+                  <p className="text-xs text-evamber font-medium uppercase tracking-wide mb-3">Payment</p>
                   {[
-                    ['UPI ID',   form.upi_id    || '—'],
-                    ['Payee',    form.payee_name || '—'],
+                    ['UPI ID',  form.upi_id],
+                    ['Payee',   form.payee_name],
                   ].map(([label, val]) => (
-                    <div key={label} className="flex gap-3">
-                      <span className="text-muted w-28 flex-shrink-0">{label}</span>
-                      <span className="text-white">{val}</span>
+                    <div key={label} className="flex gap-3 py-1 border-b border-[rgba(255,255,255,0.04)] last:border-0">
+                      <span className="text-muted w-28 flex-shrink-0 text-xs">{label}</span>
+                      <span className="text-white text-sm">{val || '—'}</span>
                     </div>
                   ))}
-                  <div className="flex gap-3 items-center">
-                    <span className="text-muted w-28 flex-shrink-0">QR Image</span>
+                  <div className="flex gap-3 items-center pt-1">
+                    <span className="text-muted w-28 flex-shrink-0 text-xs">QR Image</span>
                     {qrPreview
                       ? <img src={qrPreview} alt="QR" className="w-16 h-16 object-contain rounded-lg border border-gold/30 bg-white p-0.5" />
                       : <span className="text-muted text-xs italic">Not uploaded</span>
@@ -335,14 +537,24 @@ export default function CreateEvent() {
                 </div>
               )}
 
-              <div className="bg-evamber/10 border border-evamber/20 rounded-xl px-4 py-3 text-xs text-evamber">
-                After submission, the event will be reviewed by an Admin before going live.
+              <div className="bg-evamber/10 border border-evamber/20 rounded-xl px-4 py-3 text-xs text-evamber mt-2">
+                After submission, an Admin will review and approve this event before it goes live for students.
               </div>
             </div>
           )}
 
-          {err && <p className="mt-4 text-evred text-xs bg-evred/10 px-3 py-2 rounded-lg">{err}</p>}
+          {/* Error banner */}
+          {err && (
+            <div className="mt-4 flex items-start gap-2 text-evred text-xs bg-evred/10 border border-evred/20 px-3 py-2.5 rounded-lg">
+              <svg className="w-3.5 h-3.5 mt-0.5 flex-shrink-0" fill="none" viewBox="0 0 24 24" stroke="currentColor">
+                <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2}
+                  d="M12 9v2m0 4h.01M10.29 3.86L1.82 18a2 2 0 001.71 3h16.94a2 2 0 001.71-3L13.71 3.86a2 2 0 00-3.42 0z" />
+              </svg>
+              {err}
+            </div>
+          )}
 
+          {/* Nav buttons */}
           <div className="flex gap-3 mt-6">
             {step > 0 && (
               <button onClick={back}
@@ -355,8 +567,10 @@ export default function CreateEvent() {
             )}
             <div className="flex-1" />
             {step < STEPS.length - 1 ? (
-              <button onClick={next} disabled={step === 0 && !form.title.trim()}
-                className="flex items-center gap-1.5 btn-gold px-6 py-2.5 disabled:opacity-50 disabled:cursor-not-allowed">
+              <button
+                onClick={next}
+                className="flex items-center gap-1.5 btn-gold px-6 py-2.5"
+              >
                 Next
                 <svg className="w-4 h-4" fill="none" viewBox="0 0 24 24" stroke="currentColor">
                   <path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M9 5l7 7-7 7" />
