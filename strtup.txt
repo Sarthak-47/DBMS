@@ -1,0 +1,5 @@
+cd /d D:\Claude Code Projs\DBMS\evenzo\backend
+conda run -n fastapi-env uvicorn main:app --reload --port 8000
+
+cd /d D:\Claude Code Projs\DBMS\evenzo\frontend
+npm run dev
